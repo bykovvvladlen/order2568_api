@@ -1,0 +1,3 @@
+task_folder: ./tasks
+result_folder: ./results
+delay: 60
