@@ -102,6 +102,17 @@ for (let dir of [config.task_folder, config.result_folder]) {
     checkDir();
 })();
 
+function generateCode(length = 8) {
+    const symbols = [...'0123456789qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM'];
+    let code = '';
+    
+    for (let i = 0; i < length; i++) {
+        code += symbols[Math.floor(Math.random() * symbols.length)];
+    }
+
+    return code;
+}
+
 async function checkDir() {
     console.log(`Checking ${config.task_folder}...`);
     const filenames = fs.readdirSync(config.task_folder);
@@ -115,6 +126,7 @@ async function checkDir() {
 
             fs.unlinkSync(`${config.task_folder}/${filename}`);
             console.log(`File ${filename} readed and removed`);
+            const uniqueBaseName = generateCode();
 
             const task = file
                 .split(/\r\n/)
@@ -125,45 +137,45 @@ async function checkDir() {
                         .split(/;/);
                 });
 
-            const [i, v] = task.reduce((acc, item, index) => {
-                if (index > 0) {
-                    if (item[0]) {
-                        acc[0].push(item[0]);
-                    }
+            const types = {
+                'искомое': 0,
+                'важное': 1,
+                'сайт исключение': 2,
+            };
 
-                    if (item[1]) {
-                        acc[1].push(item[1])
-                    }
-                }
-
+            const [i, v, unique] = task.reduce((acc, [phraze, type]) => {
+                const index = types[type];
+                if (index != undefined) acc[index].push(phraze);
                 return acc;
-            }, [[], []]);
+            }, [[], [], []]);
 
             const queries = i
                 .map(item => {
-                    return v.map(sub => `${item} ${sub}`);
+                    return v.map(sub => `"${item}" ${sub}`);
                 })
                 .flat()
                 .concat(v
                     .map(item => {
-                        return i.map(sub => `${item} ${sub}`);
+                        return i.map(sub => `${item} "${sub}"`);
                     })
                     .flat());
 
             // Debug info
-            console.log({ filename, prefix, name, file, task, i, v, queries });
+            console.log({ filename, prefix, name, file, task, i, v, unique, queries, uniqueBaseName });
+            const resultName = `cites web done][${name}.csv`;
 
+            let promises = [];
             for (let key of Object.keys(parsers)) {
-                new Promise(async () => {
+                const promise = new Promise(async (resolve) => {
                     const preset = parsers[key];
-                    const resultName = `cites web done][${name}][${key}.csv`;
 
                     let res = await aparser.makeRequest('addTask', {
                         queriesFrom: 'text',
                         queries,
                         configPreset: 'default',
-                        resultsFileName: '$datefile.format().txt',
+                        resultsFileName: `${uniqueBaseName}.csv`,
                         preset,
+                        keepUnique: uniqueBaseName,
                     });
 
                     const id = res.data;
@@ -193,26 +205,32 @@ async function checkDir() {
 
                     const link = res.data;
                     console.log('results file', link);
+                    resolve(link);
 
-                    const resultsFile = await axios.get(link);
                     // console.log(resultsFile);
                     // console.log(typeof resultsFile.data);
-
-                    const resultFileText = resultsFile.data.split(/\n/).map(item => {
-                        if (/\.xn--p1ai;/.test(item)) {
-                            const url = /(^.+?\.xn--p1ai)/.exec(item)?.pop();
-                            console.log({ url, item });
-                            const decoded = punycode.toUnicode(url);
-                            item = item.replace(url, decoded);
-                            console.log(url, decoded);
-                        }
-
-                        return item;
-                    }).join('\n');
-
-                    fs.writeFileSync(`${config.result_folder}/${resultName}`, resultFileText);
                 });
+
+                promises.push(promise);
             }
+
+            const link = (await Promise.all(promises))?.pop();
+            const resultsFile = await axios.get(link);
+            const resultFileText = resultsFile.data.split(/\n/)
+            .filter(item => !new RegExp(unique.join('|'), 'i').test(item))
+            .map(item => {
+                if (/\.xn--p1ai;/.test(item)) {
+                    const url = /(^.+?\.xn--p1ai)/.exec(item)?.pop();
+                    console.log({ url, item });
+                    const decoded = punycode.toUnicode(url);
+                    item = item.replace(url, decoded);
+                    console.log(url, decoded);
+                }
+
+                return item;
+            }).join('\n');
+
+            fs.writeFileSync(`${config.result_folder}/${resultName}`, resultFileText);
         }
     }
 
