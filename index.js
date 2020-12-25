@@ -181,6 +181,8 @@ async function checkDir() {
                     const id = res.data;
                     console.log(res);
 
+                    return;
+
                     // Wait for task
                     await new Promise(async resolve => {
                         let status;
