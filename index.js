@@ -129,7 +129,7 @@ async function checkDir() {
             const uniqueBaseName = generateCode();
 
             const task = file
-                .split(/\r\n/)
+                .split(/[\r\n]+/)
                 .filter(item => item)
                 .map(item => {
                     return item
