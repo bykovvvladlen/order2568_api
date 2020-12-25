@@ -182,6 +182,7 @@ async function checkDir() {
                     console.log(res);
 
                     return;
+                    // test
 
                     // Wait for task
                     await new Promise(async resolve => {
