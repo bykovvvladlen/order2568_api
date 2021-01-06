@@ -11,6 +11,7 @@ const defaultConfig = {
     'password': '',
     'task_folder': './tasks',
     'result_folder': './results',
+    'exclusions_file': './exclusions.txt',
     'delay': 60,
 };
 
@@ -24,6 +25,7 @@ const parsers = {
 
 // Load and check settings 
 let config;
+let exclusions;
 if (fs.existsSync('./config.txt')) {
     console.log('Found config.txt');
     console.log('Getting settings...');
@@ -62,6 +64,23 @@ else {
 if (!config) {
     console.error('Something went wrong, config.txt not loaded');
     return;
+}
+
+console.log('Load exclusions file...');
+if (fs.existsSync(config['exclusions_file'])) {
+    const rawExclusionsFile = fs.readFileSync(config['exclusions_file'], 'utf-8');
+    exclusions = rawExclusionsFile.split(/[\r\n]+/g);
+    uniqueExclusions = [...new Set(exclusions)];
+    uniquePercent = parseInt((uniqueExclusions.length / exclusions.length) * 100);
+    console.log(`Found ${exclusions.length} exclusions (${uniquePercent}% unique)`);
+    exclusions = exclusions.join('|');
+    exclusions = new RegExp(exclusions, 'i');
+    console.log('Exclusions preview:', exclusions);
+}
+
+else {
+    exclusions = [];
+    console.log(`Exclusions file ${config['exclusions_file']} not found`);
 }
 
 console.log('Settings loaded');
@@ -127,41 +146,10 @@ async function checkDir() {
             fs.unlinkSync(`${config.task_folder}/${filename}`);
             console.log(`File ${filename} readed and removed`);
             const uniqueBaseName = generateCode();
-
-            const task = file
-                .split(/[\r\n]+/)
-                .filter(item => item)
-                .map(item => {
-                    return item
-                        .replace(/"{3}/g, '"')
-                        .split(/;/);
-                });
-
-            const types = {
-                'искомое': 0,
-                'важное': 1,
-                'сайт исключение': 2,
-            };
-
-            const [i, v, unique] = task.reduce((acc, [phraze, type]) => {
-                const index = types[type];
-                if (index != undefined) acc[index].push(phraze);
-                return acc;
-            }, [[], [], []]);
-
-            const queries = i
-                .map(item => {
-                    return v.map(sub => `"${item}" ${sub}`);
-                })
-                .flat()
-                .concat(v
-                    .map(item => {
-                        return i.map(sub => `${item} "${sub}"`);
-                    })
-                    .flat());
+            const queries = file.split(/[\r\n]+/).filter(item => item);
 
             // Debug info
-            console.log({ filename, prefix, name, file, task, i, v, unique, queries, uniqueBaseName });
+            console.log({ filename, prefix, name, file, exclusions, queries, uniqueBaseName });
             const resultName = `cites web done][${name}.csv`;
 
             let promises = [];
@@ -217,7 +205,7 @@ async function checkDir() {
             const link = (await Promise.all(promises))?.pop();
             const resultsFile = await axios.get(link);
             const resultFileText = resultsFile.data.split(/\n/)
-            .filter(item => !new RegExp(unique.join('|'), 'i').test(item))
+            .filter(item => !exclusions.test(item))
             .map(item => {
                 if (/\.xn--p1ai;/.test(item)) {
                     const url = /(^.+?\.xn--p1ai)/.exec(item)?.pop();
@@ -243,7 +231,7 @@ async function checkDir() {
     }, config.delay * 1000);
 }
 
-const sleep = (ms) => {
+function sleep(ms) {
     return new Promise(resolve => {
         setTimeout(() => resolve(), ms);
     });
