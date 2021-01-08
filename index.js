@@ -74,6 +74,7 @@ if (fs.existsSync(config['exclusions_file'])) {
     uniquePercent = parseInt((uniqueExclusions.length / exclusions.length) * 100);
     console.log(`Found ${exclusions.length} exclusions (${uniquePercent}% unique)`);
     exclusions = exclusions.join('|');
+    exclusions = exclusions.replace(/\./g, '\\.');
     exclusions = new RegExp(exclusions, 'i');
     console.log('Exclusions preview:', exclusions);
 }
@@ -139,7 +140,7 @@ async function checkDir() {
     if (filenames) {
         console.log(`Found ${filenames.length} tasks`);
         for (let filename of filenames) {
-            const [prefix, name] = filename.replace(/\.\w+$/, '').split('][');
+            const name = filename.replace(/\.\w+$/, '');
             const raw = fs.readFileSync(`${config.task_folder}/${filename}`);
             const file = iconv.convert(raw).toString();
 
@@ -149,7 +150,7 @@ async function checkDir() {
             const queries = file.split(/[\r\n]+/).filter(item => item);
 
             // Debug info
-            console.log({ filename, prefix, name, file, exclusions, queries, uniqueBaseName });
+            console.log({ filename, name, file, exclusions, queries, uniqueBaseName });
             const resultName = `cites web done][${name}.csv`;
 
             let promises = [];
@@ -170,9 +171,9 @@ async function checkDir() {
                     console.log(res);
 
                     // Wait for task
+                    let status;
                     await new Promise(async resolve => {
-                        let status;
-                        while (status != 'completed') {
+                        while (status != 'completed' && status != 'stopped' && status != 'paused') {
                             if (status != undefined) await sleep(5000);
                             res = await aparser.makeRequest('getTaskState', {
                                 taskUid: id,
@@ -186,7 +187,7 @@ async function checkDir() {
                     });
 
                     // Getting results file
-                    console.log({ id, done: true });
+                    console.log('done', { id, status });
                     res = await aparser.makeRequest('getTaskResultsFile', {
                         taskUid: id,
                     });
@@ -204,9 +205,11 @@ async function checkDir() {
 
             const link = (await Promise.all(promises))?.pop();
             const resultsFile = await axios.get(link);
-            const resultFileText = resultsFile.data.split(/\n/)
-            .filter(item => !exclusions.test(item))
-            .map(item => {
+            const allLinks = resultsFile.data.split(/\n/);
+            const filteredLinks = allLinks.filter(item => !exclusions.test(item));
+            const excluded = allLinks.filter(item => !filteredLinks.includes(item));
+            console.log({ excluded });
+            const resultFileText = filteredLinks.map(item => {
                 if (/\.xn--p1ai;/.test(item)) {
                     const url = /(^.+?\.xn--p1ai)/.exec(item)?.pop();
                     console.log({ url, item });
